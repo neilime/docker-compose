@@ -48,6 +48,8 @@ compose.upAll({ cwd: path.join(__dirname), log: true }).then(
 )
 ```
 
+For very chatty commands, use `callback` to process output chunks as they arrive and `maxBuffer` to cap how much stdout/stderr is retained in memory.
+
 Start specific services using `compose.upMany`:
 
 ```javascript

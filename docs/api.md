@@ -60,6 +60,8 @@ compose.upAll({
 )
 ```
 
+Use `maxBuffer` to cap the buffered stdout/stderr strings when a command can produce a lot of output.
+
 ## Options
 
 `docker-compose` accepts these params:
@@ -74,6 +76,7 @@ compose.upAll({
 | `log` | `boolean` | Enable console logging |
 | `composeOptions` | `string[] \| Array<string \| string[]>` | Options for all commands (e.g., `--verbose`) |
 | `commandOptions` | `string[] \| Array<string \| string[]>` | Options for specific command |
+| `maxBuffer` | `number` | Maximum number of characters retained from stdout/stderr |
 | `callback` | `(chunk: Buffer, sourceStream?: 'stdout' \| 'stderr') => void` | Progress callback |
 
 ### Example with options

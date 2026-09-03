@@ -8,6 +8,7 @@ import {
   beforeAll,
   MockInstance
 } from 'vitest'
+import { EventEmitter } from 'events'
 import Docker, { ContainerInfo } from 'dockerode'
 import * as compose from '../src'
 import childProcess from 'child_process'
@@ -1295,5 +1296,61 @@ describe('executable path resolution', (): void => {
       ['compose', 'up'],
       expect.objectContaining({})
     )
+  })
+})
+
+describe('output buffering limits', (): void => {
+  let spawnSpy: MockInstance<typeof childProcess.spawn>
+  let mockProc: any
+
+  beforeEach((): void => {
+    const stdout = new EventEmitter() as EventEmitter & {
+      pipe: ReturnType<typeof vi.fn>
+    }
+    stdout.pipe = vi.fn()
+    const stderr = new EventEmitter() as EventEmitter & {
+      pipe: ReturnType<typeof vi.fn>
+    }
+    stderr.pipe = vi.fn()
+
+    mockProc = new EventEmitter()
+    mockProc.stdout = stdout
+    mockProc.stderr = stderr
+    mockProc.stdin = { write: vi.fn(), end: vi.fn() }
+
+    spawnSpy = vi
+      .spyOn(childProcess, 'spawn')
+      .mockReturnValue(mockProc as childProcess.ChildProcess)
+  })
+
+  afterEach((): void => {
+    spawnSpy.mockRestore()
+    vi.useRealTimers()
+  })
+
+  it('caps stdout and stderr buffering independently', async (): Promise<void> => {
+    vi.useFakeTimers()
+
+    const callback = vi.fn()
+    const promise = compose.execCompose('up', [], {
+      callback,
+      maxBuffer: 5
+    })
+
+    mockProc.stdout.emit('data', Buffer.from('123'))
+    mockProc.stdout.emit('data', Buffer.from('456'))
+    mockProc.stderr.emit('data', Buffer.from('abcdef'))
+    mockProc.emit('exit', 0)
+
+    await vi.advanceTimersByTimeAsync(500)
+    const result = await promise
+
+    expect(result.out).toBe('12345')
+    expect(result.err).toBe('abcde')
+    expect(callback).toHaveBeenCalledTimes(3)
+    expect(callback.mock.calls[0][0].toString()).toBe('123')
+    expect(callback.mock.calls[1][0].toString()).toBe('456')
+    expect(callback.mock.calls[2][0].toString()).toBe('abcdef')
+    expect(callback.mock.calls[2][1]).toBe('stderr')
   })
 })

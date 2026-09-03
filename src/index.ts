@@ -1,4 +1,5 @@
 import childProcess from 'child_process'
+import { constants as bufferConstants } from 'buffer'
 import yaml from 'yaml'
 import mapPorts from './map-ports'
 export type { ComposeSpecification } from './compose-spec'
@@ -26,6 +27,7 @@ export interface IDockerComposeOptions {
   composeOptions?: string[] | (string | string[])[]
   commandOptions?: string[] | (string | string[])[]
   env?: NodeJS.ProcessEnv
+  maxBuffer?: number
   callback?: (chunk: Buffer, streamSource?: 'stdout' | 'stderr') => void
 }
 
@@ -93,6 +95,28 @@ export type TypedDockerComposeResult<T> = {
 }
 
 const nonEmptyString = (v: string) => v !== ''
+
+const MAX_CAPTURED_OUTPUT_LENGTH =
+  bufferConstants?.MAX_STRING_LENGTH ?? 64 * 1024 * 1024
+
+const appendBufferedOutput = (
+  output: string,
+  chunk: Buffer,
+  maxLength: number
+): string => {
+  if (output.length >= maxLength) {
+    return output
+  }
+
+  const chunkString = chunk.toString()
+  const remainingLength = maxLength - output.length
+  const nextChunk =
+    chunkString.length > remainingLength
+      ? chunkString.slice(0, remainingLength)
+      : chunkString
+
+  return output + nextChunk
+}
 
 export type DockerComposePsResultService = {
   name: string
@@ -310,6 +334,10 @@ export const execCompose = (
     const cwd = options.cwd
     const env = options.env || undefined
     const executable = options.executable
+    const requestedMaxBuffer = options.maxBuffer ?? MAX_CAPTURED_OUTPUT_LENGTH
+    const maxBuffer = Number.isFinite(requestedMaxBuffer)
+      ? Math.max(0, Math.min(requestedMaxBuffer, MAX_CAPTURED_OUTPUT_LENGTH))
+      : MAX_CAPTURED_OUTPUT_LENGTH
 
     let executablePath: string
     let executableArgs: string[] = []
@@ -342,12 +370,12 @@ export const execCompose = (
     }
 
     childProc.stdout.on('data', (chunk): void => {
-      result.out += chunk.toString()
+      result.out = appendBufferedOutput(result.out, chunk, maxBuffer)
       options.callback?.(chunk, 'stdout')
     })
 
     childProc.stderr.on('data', (chunk): void => {
-      result.err += chunk.toString()
+      result.err = appendBufferedOutput(result.err, chunk, maxBuffer)
       options.callback?.(chunk, 'stderr')
     })
 
